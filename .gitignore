@@ -1,0 +1,34 @@
+# 依存関係
+node_modules
+.pnp
+.pnp.js
+
+# ビルド
+dist
+build
+out
+
+# 環境変数
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ログ
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# エディタ設定
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS固有
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo 
