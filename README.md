@@ -20,14 +20,9 @@ npm install
 3. 環境変数の設定:
 `.env.example`ファイルを`.env`にコピーする方法:
 
-MacOS/Linux:
 ```bash
 cp .env.example .env
 ```
-
-Windows:
-```bash
-copy .env.example .env
 
 ## 使用方法
 
