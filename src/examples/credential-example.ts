@@ -81,7 +81,7 @@ async function runXRPLCommunityExamScenario() {
 
 		const credentialRequest = {
 			subject: recipientWallet.address, // 受信者のアドレス
-			credential: "XRPLCommunityExamCertification", // 資格証明タイプ
+			credential: process.env.CREDENTIAL_TYPE || "XRPLCommunityExamCertification", // 資格証明タイプ
 			memo: {
 				data: certificateData,
 				type: "application/json", // メモのタイプ

@@ -5,7 +5,7 @@ import * as path from "path";
 const TESTNET_URL = "wss://s.devnet.rippletest.net:51233/";
 
 async function main() {
-	console.log("XRPLテストネットアカウントを作成します...");
+	console.log("XRPL Devnet アカウントを作成します...");
 
 	// クライアントの初期化
 	const client = new Client(TESTNET_URL);

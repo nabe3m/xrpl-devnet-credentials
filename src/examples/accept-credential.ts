@@ -15,7 +15,7 @@ const CREDENTIAL_ID = process.env.CREDENTIAL_ID;
 // 発行者のアドレス
 const ISSUER_ADDRESS = process.env.XRPL_ACCOUNT_ADDRESS;
 // Credentialのタイプ
-const CREDENTIAL_TYPE = "XRPLCommunityExamCertification";
+const CREDENTIAL_TYPE = process.env.CREDENTIAL_TYPE || "XRPLCommunityExamCertification";
 
 if (!RECIPIENT_SEED || !CREDENTIAL_ID || !ISSUER_ADDRESS) {
 	console.error(
@@ -24,6 +24,11 @@ if (!RECIPIENT_SEED || !CREDENTIAL_ID || !ISSUER_ADDRESS) {
 	console.error("RECIPIENT_SEED: 受信者のシード（シークレット）");
 	console.error("CREDENTIAL_ID: 受け入れるCredentialのID");
 	console.error("XRPL_ACCOUNT_ADDRESS: 発行者のアドレス");
+	process.exit(1);
+}
+
+if (!CREDENTIAL_TYPE) {
+	console.error("CREDENTIAL_TYPE: クレデンシャルタイプが設定されていません");
 	process.exit(1);
 }
 
