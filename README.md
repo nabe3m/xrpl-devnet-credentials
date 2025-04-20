@@ -28,12 +28,6 @@ cp .env.example .env
 Windows:
 ```bash
 copy .env.example .env
-```
-
-または、以下のコマンドで自動的に発行者と受信者の両方のテストアカウントを作成して設定することができます:
-```bash
-npm run create-account
-```
 
 ## 使用方法
 
@@ -114,7 +108,6 @@ npm run lint
 
 ## XRPLとDevnet環境について
 
-- XRPLは高速で低コストな分散型台帳技術です
 - Devnetは開発者がXRPLの新機能を安全にテストするための環境です
 - テスト用XRPはDevnetフォーセットから無料で入手できます
 - トランザクションの詳細はDevnet Explorerで確認できます: https://devnet.xrpl.org
