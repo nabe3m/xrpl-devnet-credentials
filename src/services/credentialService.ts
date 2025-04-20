@@ -1,234 +1,254 @@
-import { Client, Wallet, SubmittableTransaction } from "xrpl";
-import { CredentialRequest, CredentialResponse } from "../types/credential";
-import {
-	CredentialTransaction,
-	CredentialRevokeTransaction,
-} from "../types/xrpl-extensions";
+import type { Client, Wallet, SubmittableTransaction } from "xrpl";
+import type { CredentialRequest, CredentialResponse } from "../types/credential";
+import type { CredentialTransaction, CredentialRevokeTransaction } from "../types/xrpl-extensions";
 
 export class CredentialService {
-	private client: Client;
-	private wallet: Wallet;
+  private client: Client;
+  private wallet: Wallet;
 
-	constructor(client: Client, wallet: Wallet) {
-		this.client = client;
-		this.wallet = wallet;
-	}
+  constructor(client: Client, wallet: Wallet) {
+    this.client = client;
+    this.wallet = wallet;
+  }
 
-	// クレデンシャルの発行
-	async issueCredential(request: CredentialRequest): Promise<string> {
-		try {
-			// トランザクションの準備
-			const tx: CredentialTransaction = {
-				TransactionType: "CredentialCreate",
-				Account: this.wallet.address,
-				Subject: request.subject,
-				CredentialType: this.stringToHex(request.credential),
-				...(request.expiration && {
-					Expiration: this.dateToRippleTime(request.expiration),
-				}),
-				...(request.uri && { URI: this.stringToHex(request.uri) }),
-			};
+  // クレデンシャルの発行
+  async issueCredential(request: CredentialRequest): Promise<string> {
+    try {
+      // トランザクションの準備
+      const tx: CredentialTransaction = {
+        TransactionType: "CredentialCreate",
+        Account: this.wallet.address,
+        Subject: request.subject,
+        CredentialType: this.stringToHex(request.credential),
+        ...(request.expiration && {
+          Expiration: this.dateToRippleTime(request.expiration),
+        }),
+        ...(request.uri && { URI: this.stringToHex(request.uri) }),
+      };
 
-			// メモの追加（オプション）
-			if (request.memo) {
-				const memos = [
-					{
-						Memo: {
-							MemoData: this.stringToHex(request.memo.data),
-							...(request.memo.type && {
-								MemoType: this.stringToHex(request.memo.type),
-							}),
-							...(request.memo.format && {
-								MemoFormat: this.stringToHex(request.memo.format),
-							}),
-						},
-					},
-				];
-				tx.Memos = memos;
-			}
+      // メモの追加（オプション）
+      if (request.memo) {
+        const memos = [
+          {
+            Memo: {
+              MemoData: this.stringToHex(request.memo.data),
+              ...(request.memo.type && {
+                MemoType: this.stringToHex(request.memo.type),
+              }),
+              ...(request.memo.format && {
+                MemoFormat: this.stringToHex(request.memo.format),
+              }),
+            },
+          },
+        ];
+        tx.Memos = memos;
+      }
 
-			// トランザクションの送信
-			const prepared = await this.client.autofill(
-				tx as unknown as SubmittableTransaction,
-			);
-			const signed = this.wallet.sign(prepared);
-			const result = await this.client.submitAndWait(signed.tx_blob);
+      // トランザクションの送信
+      const prepared = await this.client.autofill(tx as unknown as SubmittableTransaction);
+      const signed = this.wallet.sign(prepared);
+      const result = await this.client.submitAndWait(signed.tx_blob);
 
-			if (typeof result.result.meta === "object" && result.result.meta) {
-				// TransactionResultを安全に取得
-				const txResult = (result.result.meta as any).TransactionResult;
-				if (txResult === "tesSUCCESS") {
-					return result.result.hash;
-				} else {
-					throw new Error(
-						`クレデンシャルの発行に失敗しました: ${txResult || "不明なエラー"}`,
-					);
-				}
-			} else {
-				throw new Error("トランザクションの結果が不明です");
-			}
-		} catch (error) {
-			console.error("クレデンシャル発行エラー:", error);
-			throw error;
-		}
-	}
+      if (typeof result.result.meta === "object" && result.result.meta) {
+        // TransactionResultを安全に取得
+        const txResult = (result.result.meta as any).TransactionResult;
+        if (txResult === "tesSUCCESS") {
+          // metaからCredentialのLedgerIndexを抽出
+          const meta = result.result.meta as any;
+          if (meta.AffectedNodes && Array.isArray(meta.AffectedNodes)) {
+            // CreatedNodeでLedgerEntryTypeがCredentialのものを探す
+            const credentialNode = meta.AffectedNodes.find(
+              (node: any) => node.CreatedNode && node.CreatedNode.LedgerEntryType === "Credential",
+            );
 
-	// クレデンシャルの取得
-	async getCredentials(subject?: string): Promise<CredentialResponse[]> {
-		try {
-			// account_credentials APIが利用できないため、
-			// account_objects APIを使用してCredentialオブジェクトを取得
-			const request = {
-				command: "account_objects",
-				account: this.wallet.address,
-				type: "credential", // Credentialオブジェクトのみ取得
-			};
+            if (credentialNode?.CreatedNode?.LedgerIndex) {
+              // 実際のCredential ID（LedgerIndex）を返す
+              console.log(
+                `発行されたクレデンシャルのID: ${credentialNode.CreatedNode.LedgerIndex}`,
+              );
 
-			const response = await this.client.request(request as any);
-			const result = response.result as any;
+              return credentialNode.CreatedNode.LedgerIndex;
+            }
+          }
+          console.log("クレデンシャル発行に成功しました");
+        }
+        throw new Error(`クレデンシャルの発行に失敗しました: ${txResult || "不明なエラー"}`);
+      }
+      throw new Error("トランザクションの結果が不明です");
+    } catch (error) {
+      console.error("クレデンシャル発行エラー:", error);
+      throw error;
+    }
+  }
 
-			if (!result.account_objects || !Array.isArray(result.account_objects)) {
-				return [];
-			}
+  // クレデンシャルの取得
+  async getCredentials(subject?: string): Promise<CredentialResponse[]> {
+    try {
+      // account_credentials APIが利用できないため、
+      // account_objects APIを使用してCredentialオブジェクトを取得
+      const request = {
+        command: "account_objects",
+        account: this.wallet.address,
+        type: "credential", // Credentialオブジェクトのみ取得
+      };
 
-			// 特定のsubjectに関連するCredentialのみをフィルタリング
-			const credentials = subject
-				? result.account_objects.filter((obj: any) => obj.Subject === subject)
-				: result.account_objects;
+      const response = await this.client.request(request as any);
+      const result = response.result as any;
 
-			return credentials.map((cred: any) => {
-				const response: CredentialResponse = {
-					subject: cred.Subject,
-					credential: this.hexToString(cred.CredentialType),
-					accepted: (cred.Flags & 0x00010000) !== 0,
-					...(cred.Expiration && {
-						expiration: this.rippleTimeToDate(cred.Expiration),
-					}),
-					...(cred.URI && { uri: this.hexToString(cred.URI) }),
-				};
+      if (!result.account_objects || !Array.isArray(result.account_objects)) {
+        return [];
+      }
 
-				// メモ情報の取得
-				if (cred.Memos && cred.Memos.length > 0 && cred.Memos[0].Memo) {
-					const memo = cred.Memos[0].Memo;
-					response.memo = {
-						data: this.hexToString(memo.MemoData || ""),
-						...(memo.MemoType && { type: this.hexToString(memo.MemoType) }),
-						...(memo.MemoFormat && {
-							format: this.hexToString(memo.MemoFormat),
-						}),
-					};
-				}
+      // 特定のsubjectに関連するCredentialのみをフィルタリング
+      const credentials = subject
+        ? result.account_objects.filter((obj: any) => obj.Subject === subject)
+        : result.account_objects;
 
-				return response;
-			});
-		} catch (error) {
-			console.error("クレデンシャル取得エラー:", error);
-			throw error;
-		}
-	}
+      return credentials.map((cred: any) => {
+        const response: CredentialResponse = {
+          subject: cred.Subject,
+          credential: this.hexToString(cred.CredentialType),
+          accepted: (cred.Flags & 0x00010000) !== 0,
+          ...(cred.Expiration && {
+            expiration: this.rippleTimeToDate(cred.Expiration),
+          }),
+          ...(cred.URI && { uri: this.hexToString(cred.URI) }),
+        };
 
-	// クレデンシャルの取り消し
-	async revokeCredential(
-		credentialType: string,
-		subject?: string,
-		issuer?: string,
-	): Promise<string> {
-		try {
-			// 必須パラメータの検証
-			if (!credentialType) {
-				throw new Error("クレデンシャルタイプが指定されていません");
-			}
+        // メモ情報の取得
+        if (cred.Memos && cred.Memos.length > 0 && cred.Memos[0].Memo) {
+          const memo = cred.Memos[0].Memo;
+          response.memo = {
+            data: this.hexToString(memo.MemoData || ""),
+            ...(memo.MemoType && { type: this.hexToString(memo.MemoType) }),
+            ...(memo.MemoFormat && {
+              format: this.hexToString(memo.MemoFormat),
+            }),
+          };
+        }
 
-			// 少なくともSubjectかIssuerのどちらかを指定
-			if (!subject && !issuer) {
-				// 対象のCredentialを特定
-				console.log("取り消すCredentialの情報を検索中...");
-				const credentials = await this.getCredentials();
+        return response;
+      });
+    } catch (error) {
+      console.error("クレデンシャル取得エラー:", error);
+      throw error;
+    }
+  }
 
-				if (credentials.length > 0) {
-					// 対象の証明書タイプに合致するCredentialを検索
-					const matchedCredential = credentials.find(
-						(cred) => cred.credential === credentialType,
-					);
+  // クレデンシャルの取り消し
+  async revokeCredential(
+    credentialType: string,
+    subject?: string,
+    issuer?: string,
+  ): Promise<string> {
+    try {
+      // 必須パラメータの検証
+      if (!credentialType) {
+        throw new Error("クレデンシャルタイプが指定されていません");
+      }
 
-					if (matchedCredential) {
-						subject = matchedCredential.subject;
-						console.log(
-							`対象のCredentialを発見しました: Type=${credentialType}, Subject=${subject}`,
-						);
-					} else {
-						throw new Error(
-							`指定された証明書タイプ ${credentialType} のCredentialが見つかりませんでした`,
-						);
-					}
-				} else {
-					throw new Error("取り消すCredentialが見つかりませんでした");
-				}
-			}
+      // 少なくともSubjectかIssuerのどちらかを指定
+      if (!subject && !issuer) {
+        // 対象のCredentialを特定
+        console.log("取り消すCredentialの情報を検索中...");
+        const credentials = await this.getCredentials();
 
-			// トランザクションの準備
-			const tx: CredentialRevokeTransaction = {
-				TransactionType: "CredentialDelete",
-				Account: this.wallet.address,
-				CredentialType: this.stringToHex(credentialType),
-			};
+        if (credentials.length > 0) {
+          // 対象の証明書タイプに合致するCredentialを検索
+          const matchedCredential = credentials.find((cred) => cred.credential === credentialType);
 
-			// Subject/Issuerの少なくともどちらかが必要
-			if (subject) {
-				tx.Subject = subject;
-			} else if (issuer) {
-				tx.Issuer = issuer;
-			} else {
-				throw new Error(
-					"クレデンシャルの取り消しにはSubjectまたはIssuerのどちらかが必要です",
-				);
-			}
+          if (matchedCredential) {
+            const foundSubject = matchedCredential.subject;
+            console.log(
+              `対象のCredentialを発見しました: Type=${credentialType}, Subject=${foundSubject}`,
+            );
 
-			console.log("送信するトランザクション:", JSON.stringify(tx, null, 2));
+            // トランザクションの準備
+            const tx: CredentialRevokeTransaction = {
+              TransactionType: "CredentialDelete",
+              Account: this.wallet.address,
+              CredentialType: this.stringToHex(credentialType),
+              Subject: foundSubject,
+            };
 
-			const prepared = await this.client.autofill(
-				tx as unknown as SubmittableTransaction,
-			);
-			const signed = this.wallet.sign(prepared);
-			const result = await this.client.submitAndWait(signed.tx_blob);
+            // トランザクションの送信
+            const prepared = await this.client.autofill(tx as unknown as SubmittableTransaction);
+            const signed = this.wallet.sign(prepared);
+            const result = await this.client.submitAndWait(signed.tx_blob);
 
-			if (typeof result.result.meta === "object" && result.result.meta) {
-				const txResult = (result.result.meta as any).TransactionResult;
-				if (txResult === "tesSUCCESS") {
-					return result.result.hash;
-				} else {
-					throw new Error(
-						`クレデンシャルの取り消しに失敗しました: ${txResult || "不明なエラー"}`,
-					);
-				}
-			} else {
-				throw new Error("トランザクションの結果が不明です");
-			}
-		} catch (error) {
-			console.error("クレデンシャル取り消しエラー:", error);
-			throw error;
-		}
-	}
+            if (typeof result.result.meta === "object" && result.result.meta) {
+              const txResult = (result.result.meta as any).TransactionResult;
+              if (txResult === "tesSUCCESS") {
+                return result.result.hash;
+              }
+              throw new Error(
+                `クレデンシャルの取り消しに失敗しました: ${txResult || "不明なエラー"}`,
+              );
+            }
+            throw new Error("トランザクションの結果が不明です");
+          }
+          throw new Error(
+            `指定された証明書タイプ ${credentialType} のCredentialが見つかりませんでした`,
+          );
+        }
+        throw new Error("取り消すCredentialが見つかりませんでした");
+      }
 
-	// 文字列を16進数に変換
-	private stringToHex(str: string): string {
-		return Buffer.from(str).toString("hex").toUpperCase();
-	}
+      // トランザクションの準備
+      const tx: CredentialRevokeTransaction = {
+        TransactionType: "CredentialDelete",
+        Account: this.wallet.address,
+        CredentialType: this.stringToHex(credentialType),
+      };
 
-	// 16進数を文字列に変換
-	private hexToString(hex: string): string {
-		return Buffer.from(hex, "hex").toString();
-	}
+      // Subject/Issuerの少なくともどちらかが必要
+      if (subject) {
+        tx.Subject = subject;
+      } else if (issuer) {
+        tx.Issuer = issuer;
+      } else {
+        throw new Error("クレデンシャルの取り消しにはSubjectまたはIssuerのどちらかが必要です");
+      }
 
-	// 日付をRippleTimeに変換
-	private dateToRippleTime(dateStr: string): number {
-		const date = new Date(dateStr);
-		return Math.floor(date.getTime() / 1000) - 946684800;
-	}
+      console.log("送信するトランザクション:", JSON.stringify(tx, null, 2));
 
-	// RippleTimeを日付に変換
-	private rippleTimeToDate(rippleTime: number): string {
-		const date = new Date((rippleTime + 946684800) * 1000);
-		return date.toISOString();
-	}
+      const prepared = await this.client.autofill(tx as unknown as SubmittableTransaction);
+      const signed = this.wallet.sign(prepared);
+      const result = await this.client.submitAndWait(signed.tx_blob);
+
+      if (typeof result.result.meta === "object" && result.result.meta) {
+        const txResult = (result.result.meta as any).TransactionResult;
+        if (txResult === "tesSUCCESS") {
+          return result.result.hash;
+        }
+        throw new Error(`クレデンシャルの取り消しに失敗しました: ${txResult || "不明なエラー"}`);
+      }
+      throw new Error("トランザクションの結果が不明です");
+    } catch (error) {
+      console.error("クレデンシャル取り消しエラー:", error);
+      throw error;
+    }
+  }
+
+  // 文字列を16進数に変換
+  private stringToHex(str: string): string {
+    return Buffer.from(str).toString("hex").toUpperCase();
+  }
+
+  // 16進数を文字列に変換
+  private hexToString(hex: string): string {
+    return Buffer.from(hex, "hex").toString();
+  }
+
+  // 日付をRippleTimeに変換
+  private dateToRippleTime(dateStr: string): number {
+    const date = new Date(dateStr);
+    return Math.floor(date.getTime() / 1000) - 946684800;
+  }
+
+  // RippleTimeを日付に変換
+  private rippleTimeToDate(rippleTime: number): string {
+    const date = new Date((rippleTime + 946684800) * 1000);
+    return date.toISOString();
+  }
 }
